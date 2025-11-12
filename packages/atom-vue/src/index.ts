@@ -38,18 +38,6 @@ export * as AtomRef from "@effect-atom/atom/AtomRef"
 
 /**
  * @since 1.0.0
- * @category re-exports
- */
-export * as AtomHttpApi from "@effect-atom/atom/AtomHttpApi"
-
-/**
- * @since 1.0.0
- * @category modules
- */
-export * as AtomRpc from "@effect-atom/atom/AtomRpc"
-
-/**
- * @since 1.0.0
  * @category registry
  */
 export const registryKey = Symbol.for(Registry.TypeId) as InjectionKey<Registry.Registry>

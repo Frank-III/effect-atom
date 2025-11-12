@@ -106,10 +106,11 @@ importers:
         version: 4.0.7(@types/node@24.10.0)(jsdom@27.1.0)(tsx@4.20.6)(yaml@2.8.1)
 
   packages/atom:
+    dependencies:
+      signal-polyfill:
+        specifier: 0.2.2
+        version: 0.2.2
     devDependencies:
-      '@effect/experimental':
-        specifier: ^0.57.0
-        version: 0.57.0(@effect/platform@0.93.0(effect@3.19.0))(effect@3.19.0)
       '@effect/platform':
         specifier: ^0.93.0
         version: 0.93.0(effect@3.19.0)
@@ -3692,6 +3693,9 @@ packages:
   signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
+
+  signal-polyfill@0.2.2:
+    resolution: {integrity: sha512-p63Y4Er5/eMQ9RHg0M0Y64NlsQKpiu6MDdhBXpyywRuWiPywhJTpKJ1iB5K2hJEbFZ0BnDS7ZkJ+0AfTuL37Rg==}
 
   slash@2.0.0:
     resolution: {integrity: sha512-ZYKh3Wh2z1PpEXWr0MpSBZ0V6mZHAQfYevttO11c51CaWjGTaadiKZ+wVt1PbMlDV5qhMFslpZCemhwOK7C89A==}
@@ -8065,6 +8069,8 @@ snapshots:
   signal-exit@3.0.7: {}
 
   signal-exit@4.1.0: {}
+
+  signal-polyfill@0.2.2: {}
 
   slash@2.0.0: {}
 
