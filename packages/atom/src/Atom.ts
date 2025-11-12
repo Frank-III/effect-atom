@@ -417,7 +417,7 @@ export const transform = <A, B>(
  * @since 2.0.0
  * @category runtime
  */
-export interface AtomRuntime<R, E> {
+export interface AtomRuntime<R, E> extends Atom<Result.Result<Runtime.Runtime<R>, E>> {
   readonly layer: Layer.Layer<R, E>
   readonly atom: <A>(effect: Effect.Effect<A, E, R>) => Atom<Result.Result<A, E>>
   readonly fn: <Args extends Record<string, any>>() => 
@@ -452,72 +452,81 @@ export type AtomResultFn<Args, A, E = never> = (args: Args) => Atom<Result.Resul
  * @category runtime
  */
 export const runtime = <R, E>(layer: Layer.Layer<R, E>): AtomRuntime<R, E> => {
-  const runtime: AtomRuntime<R, E> = {
-    layer,
+  // Create an atom that builds the runtime from the layer
+  const runtimeAtom = resultEffect<Runtime.Runtime<R>, E>(() => 
+    pipe(
+      layer,
+      Layer.buildWithMemoMap(Layer.MemoMap.make(), (_) => _),
+      Effect.map((context) => Runtime.make(context))
+    )
+  )
+  
+  // Create the AtomRuntime by extending the runtime atom
+  const atomRuntime = Object.create(runtimeAtom) as AtomRuntime<R, E>
+  
+  atomRuntime.layer = layer
+  
+  atomRuntime.atom = <A>(effect: Effect.Effect<A, E, R>) => 
+    resultEffect(() => Effect.provide(effect, layer))
+  
+  atomRuntime.fn = <Args extends Record<string, any>>() => 
+    <A>(f: (args: Args) => Effect.Effect<A, E, R>) => 
+    (args: Args) => 
+      resultEffect(() => Effect.provide(f(args), layer))
+  
+  atomRuntime.pull = <A, E2>(stream: Stream.Stream<A, E2, R>) => {
+    // Create a writable atom for pull results
+    const pullAtom = state<PullResult<A, E | E2>>(Result.initial(true))
     
-    atom: <A>(effect: Effect.Effect<A, E, R>) => 
-      resultEffect(() => Effect.provide(effect, layer)),
+    // Set up the stream subscription
+    let fiber: any // Runtime.RuntimeFiber<never, E | E2> | undefined
     
-    fn: <Args extends Record<string, any>>() => 
-      <A>(f: (args: Args) => Effect.Effect<A, E, R>) => 
-      (args: Args) => 
-        resultEffect(() => Effect.provide(f(args), layer)),
-    
-    pull: <A, E2>(stream: Stream.Stream<A, E2, R>) => {
-      // Create a writable atom for pull results
-      const pullAtom = state<PullResult<A, E | E2>>(Result.initial(true))
-      
-      // Set up the stream subscription
-      let fiber: any // Runtime.RuntimeFiber<never, E | E2> | undefined
-      
-      const pull = () => {
-        if (fiber) {
-          // Runtime.interrupt(fiber)
-          // For now, just cancel the previous effect
-          Effect.runFork(fiber.interrupt)
-        }
-        
-        pullAtom.write(Result.waiting(pullAtom.signal.get()))
-        
-        const pullEffect = pipe(
-          stream,
-          Stream.runCollect,
-          Effect.map((chunk) => Array.from(chunk) as ReadonlyArray<A>),
-          Effect.provide(layer),
-          Effect.runFork
-        )
-        
-        fiber = pullEffect
-        
-        fiber.addObserver((exit: Exit.Exit<ReadonlyArray<A>, E | E2>) => {
-          if (Exit.isSuccess(exit)) {
-            pullAtom.write(Result.success(exit.value) as PullResult<A, E | E2>)
-          } else {
-            pullAtom.write(Result.failure(exit.cause) as PullResult<A, E | E2>)
-          }
-        })
+    const pull = () => {
+      if (fiber) {
+        // For now, just cancel the previous effect
+        Effect.runFork(fiber.interrupt)
       }
       
-      // Initial pull
-      pull()
+      pullAtom.write(Result.waiting(pullAtom.signal.get()))
       
-      // Create writable that triggers pull on write
-      return writableComputed(
-        () => pullAtom.signal.get(),
-        () => pull()
+      const pullEffect = pipe(
+        stream,
+        Stream.runCollect,
+        Effect.map((chunk) => Array.from(chunk) as ReadonlyArray<A>),
+        Effect.provide(layer),
+        Effect.runFork
       )
-    },
+      
+      fiber = pullEffect
+      
+      fiber.addObserver((exit: Exit.Exit<ReadonlyArray<A>, E | E2>) => {
+        if (Exit.isSuccess(exit)) {
+          pullAtom.write(Result.success(exit.value) as PullResult<A, E | E2>)
+        } else {
+          pullAtom.write(Result.failure(exit.cause) as PullResult<A, E | E2>)
+        }
+      })
+    }
     
-    factory: {
-      withReactivity: (keys) => <T extends Atom<any>>(atom: T): T => {
-        // For now, just return the atom unchanged
-        // TODO: Implement reactivity key tracking with Signals
-        return atom
-      }
+    // Initial pull
+    pull()
+    
+    // Create writable that triggers pull on write
+    return writableComputed(
+      () => pullAtom.signal.get(),
+      () => pull()
+    )
+  }
+  
+  atomRuntime.factory = {
+    withReactivity: (keys) => <T extends Atom<any>>(atom: T): T => {
+      // For now, just return the atom unchanged
+      // TODO: Implement reactivity key tracking with Signals
+      return atom
     }
   }
   
-  return runtime
+  return atomRuntime
 }
 
 /**
