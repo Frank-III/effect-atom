@@ -3,6 +3,7 @@
  * This is the new reactive system using the TC39 Signal proposal
  *
  * @since 2.0.0
+ * @experimental
  */
 
 import type * as Cause from "effect/Cause"
