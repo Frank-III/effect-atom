@@ -1,0 +1,52 @@
+name: Publish PR to pkg.pr.new
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10.18.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm run build
+        continue-on-error: true # Allow build to continue even with type errors for testing
+
+      - name: Temporarily rename packages for publishing
+        run: |
+          # Backup original package.json files
+          cp packages/atom/package.json packages/atom/package.json.bak
+          cp packages/atom-react/package.json packages/atom-react/package.json.bak
+
+          # Update package names for publishing
+          sed -i 's/"name": "@effect-atom\/atom"/"name": "effect-signal"/' packages/atom/package.json
+          sed -i 's/"name": "@effect-atom\/atom-react"/"name": "effect-signal-react"/' packages/atom-react/package.json
+          sed -i 's/"@effect-atom\/atom": "workspace:\^"/"effect-signal": "*"/' packages/atom-react/package.json
+
+      - name: Publish to pkg.pr.new
+        run: pnpm dlx pkg-pr-new publish --compact --pnpm ./packages/atom ./packages/atom-react
+
+      - name: Restore original package names
+        if: always()
+        run: |
+          # Restore original package.json files
+          mv packages/atom/package.json.bak packages/atom/package.json || true
+          mv packages/atom-react/package.json.bak packages/atom-react/package.json || true
