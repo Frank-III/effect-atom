@@ -9,8 +9,11 @@
 import type * as Cause from "effect/Cause"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Inspectable from "effect/Inspectable"
+import * as Layer from "effect/Layer"
 import type * as Option from "effect/Option"
+import { pipe } from "effect/Function"
 import { pipeArguments } from "effect/Pipeable"
 import type { Pipeable } from "effect/Pipeable"
 import { hasProperty } from "effect/Predicate"
@@ -410,6 +413,114 @@ export const transform = <A, B>(
 ): Atom<B> => readable(f)
 
 /**
+ * Runtime for managing atoms with layers
+ * @since 2.0.0
+ * @category runtime
+ */
+export interface AtomRuntime<R, E> {
+  readonly layer: Layer.Layer<R, E>
+  readonly atom: <A>(effect: Effect.Effect<A, E, R>) => Atom<Result.Result<A, E>>
+  readonly fn: <Args extends Record<string, any>>() => 
+    <A>(f: (args: Args) => Effect.Effect<A, E, R>) => 
+    (args: Args) => Atom<Result.Result<A, E>>
+  readonly pull: <A, E2>(
+    stream: Stream.Stream<A, E2, R>
+  ) => Writable<PullResult<A, E | E2>, void>
+  readonly factory: {
+    readonly withReactivity: (keys: ReadonlyArray<unknown> | Record<string, ReadonlyArray<unknown>>) => 
+      <T extends Atom<any>>(atom: T) => T
+  }
+}
+
+/**
+ * Result type for pull operations
+ * @since 2.0.0
+ * @category models
+ */
+export type PullResult<A, E = never> = Result.Result<ReadonlyArray<A>, E>
+
+/**
+ * Function that returns an atom result
+ * @since 2.0.0
+ * @category models
+ */
+export type AtomResultFn<Args, A, E = never> = (args: Args) => Atom<Result.Result<A, E>>
+
+/**
+ * Create a runtime for atoms with a layer
+ * @since 2.0.0
+ * @category runtime
+ */
+export const runtime = <R, E>(layer: Layer.Layer<R, E>): AtomRuntime<R, E> => {
+  const runtime: AtomRuntime<R, E> = {
+    layer,
+    
+    atom: <A>(effect: Effect.Effect<A, E, R>) => 
+      resultEffect(() => Effect.provide(effect, layer)),
+    
+    fn: <Args extends Record<string, any>>() => 
+      <A>(f: (args: Args) => Effect.Effect<A, E, R>) => 
+      (args: Args) => 
+        resultEffect(() => Effect.provide(f(args), layer)),
+    
+    pull: <A, E2>(stream: Stream.Stream<A, E2, R>) => {
+      // Create a writable atom for pull results
+      const pullAtom = state<PullResult<A, E | E2>>(Result.initial(true))
+      
+      // Set up the stream subscription
+      let fiber: any // Runtime.RuntimeFiber<never, E | E2> | undefined
+      
+      const pull = () => {
+        if (fiber) {
+          // Runtime.interrupt(fiber)
+          // For now, just cancel the previous effect
+          Effect.runFork(fiber.interrupt)
+        }
+        
+        pullAtom.write(Result.waiting(pullAtom.signal.get()))
+        
+        const pullEffect = pipe(
+          stream,
+          Stream.runCollect,
+          Effect.map((chunk) => Array.from(chunk) as ReadonlyArray<A>),
+          Effect.provide(layer),
+          Effect.runFork
+        )
+        
+        fiber = pullEffect
+        
+        fiber.addObserver((exit: Exit.Exit<ReadonlyArray<A>, E | E2>) => {
+          if (Exit.isSuccess(exit)) {
+            pullAtom.write(Result.success(exit.value) as PullResult<A, E | E2>)
+          } else {
+            pullAtom.write(Result.failure(exit.cause) as PullResult<A, E | E2>)
+          }
+        })
+      }
+      
+      // Initial pull
+      pull()
+      
+      // Create writable that triggers pull on write
+      return writableComputed(
+        () => pullAtom.signal.get(),
+        () => pull()
+      )
+    },
+    
+    factory: {
+      withReactivity: (keys) => <T extends Atom<any>>(atom: T): T => {
+        // For now, just return the atom unchanged
+        // TODO: Implement reactivity key tracking with Signals
+        return atom
+      }
+    }
+  }
+  
+  return runtime
+}
+
+/**
  * Keep an atom alive (prevent disposal)
  * @since 2.0.0
  * @category combinators
@@ -499,32 +610,46 @@ export const subscribe = <A>(
 }
 
 /**
- * Create an atom that runs an Effect
+ * Create an atom from an effect that returns a Result
+ * @since 2.0.0
+ * @category constructors
+ */
+export const resultEffect = <A, E>(
+  fn: () => Effect.Effect<A, E>,
+  options?: {
+    readonly idleTTL?: number
+  }
+): Atom<Result.Result<A, E>> => {
+  return effect(fn, options)
+}
+
+/**
+ * Create an effect atom
  * @since 2.0.0
  * @category constructors
  */
 export const effect = <A, E>(
-  eff: Effect.Effect<A, E> | ((get: Context) => Effect.Effect<A, E>),
-  options?: { initialValue?: A }
+  fn: () => Effect.Effect<A, E>,
+  options?: {
+    readonly idleTTL?: number
+  }
 ): Atom<Result.Result<A, E>> => {
   const resultSignal = new Signal.State<Result.Result<A, E>>(
-    options?.initialValue !== undefined
-      ? Result.success(options.initialValue)
-      : Result.initial()
+    Result.initial()
   )
 
   // Run the effect
   let cancel: (() => void) | undefined
 
   const runEffect = () => {
-    const actualEffect = typeof eff === "function" ? eff({} as Context) : eff
+    const actualEffect = fn()
 
     // Mark as waiting
     resultSignal.set(Result.waiting(resultSignal.get()))
 
     // Run the effect
     cancel = runCallbackSync(Runtime.defaultRuntime)(actualEffect, (exit) => {
-      resultSignal.set(Result.fromExit(exit))
+      resultSignal.set(Result.fromExit(exit) as Result.Result<A, E>)
     })
   }
 

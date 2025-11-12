@@ -168,7 +168,7 @@ export const Tag =
     ).pipe(Layer.provide(options.httpClient)) as Layer.Layer<Self, E>
     self.runtime = Atom.runtime(self.layer)
 
-    const mutationFamily = Atom.family(({ endpoint, group }: MutationKey) =>
+    self.mutation = ((group: string, endpoint: string) =>
       self.runtime.fn<{
         path: any
         urlParams: any
@@ -181,15 +181,6 @@ export const Tag =
           const effect = client[group][endpoint](opts) as Effect.Effect<any>
           // TODO: Implement mutation invalidation with Signals
           return yield* effect
-        })
-      )
-    ) as any
-
-    self.mutation = ((group: string, endpoint: string) =>
-      mutationFamily(
-        new MutationKey({
-          group,
-          endpoint
         })
       )) as any
 
@@ -241,21 +232,6 @@ export const Tag =
 
     return self as AtomHttpApiClient<Self, Id, Groups, ApiE, E>
   }
-
-class MutationKey extends Data.Class<{
-  group: string
-  endpoint: string
-}> {
-  [Equal.symbol](that: QueryKey) {
-    return this.group === that.group && this.endpoint === that.endpoint
-  }
-  [Hash.symbol]() {
-    return pipe(
-      Hash.string(`${this.group}/${this.endpoint}`),
-      Hash.cached(this)
-    )
-  }
-}
 
 class QueryKey extends Data.Class<{
   group: string

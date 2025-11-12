@@ -135,7 +135,7 @@ export const Tag = <Self>() =>
   ).pipe(Layer.provide(options.protocol))
   self.runtime = Atom.runtime(self.layer)
 
-  self.mutation = Atom.family(<Tag extends Rpc.Tag<Rpcs>>(tag: Tag) =>
+  self.mutation = (<Tag extends Rpc.Tag<Rpcs>>(tag: Tag) =>
     self.runtime.fn<{
       readonly payload: Rpc.PayloadConstructor<Rpc.ExtractTag<Rpcs, Tag>>
       readonly reactivityKeys?:
