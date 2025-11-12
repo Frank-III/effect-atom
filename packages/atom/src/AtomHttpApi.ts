@@ -1,7 +1,7 @@
 /**
  * @since 1.0.0
  */
-import * as Reactivity from "@effect/experimental/Reactivity"
+// import * as Reactivity from "@effect/experimental/Reactivity" // No longer needed with Signals
 import type * as HttpApi from "@effect/platform/HttpApi"
 import * as HttpApiClient from "@effect/platform/HttpApiClient"
 import type * as HttpApiEndpoint from "@effect/platform/HttpApiEndpoint"
@@ -168,7 +168,7 @@ export const Tag =
     ).pipe(Layer.provide(options.httpClient)) as Layer.Layer<Self, E>
     self.runtime = Atom.runtime(self.layer)
 
-    const mutationFamily = Atom.family(({ endpoint, group }: MutationKey) =>
+    self.mutation = ((group: string, endpoint: string) =>
       self.runtime.fn<{
         path: any
         urlParams: any
@@ -179,18 +179,8 @@ export const Tag =
         Effect.fnUntraced(function*(opts) {
           const client = (yield* self) as any
           const effect = client[group][endpoint](opts) as Effect.Effect<any>
-          return yield* opts.reactivityKeys
-            ? Reactivity.mutation(effect, opts.reactivityKeys)
-            : effect
-        })
-      )
-    ) as any
-
-    self.mutation = ((group: string, endpoint: string) =>
-      mutationFamily(
-        new MutationKey({
-          group,
-          endpoint
+          // TODO: Implement mutation invalidation with Signals
+          return yield* effect
         })
       )) as any
 
@@ -242,21 +232,6 @@ export const Tag =
 
     return self as AtomHttpApiClient<Self, Id, Groups, ApiE, E>
   }
-
-class MutationKey extends Data.Class<{
-  group: string
-  endpoint: string
-}> {
-  [Equal.symbol](that: QueryKey) {
-    return this.group === that.group && this.endpoint === that.endpoint
-  }
-  [Hash.symbol]() {
-    return pipe(
-      Hash.string(`${this.group}/${this.endpoint}`),
-      Hash.cached(this)
-    )
-  }
-}
 
 class QueryKey extends Data.Class<{
   group: string

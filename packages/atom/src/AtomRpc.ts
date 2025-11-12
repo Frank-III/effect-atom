@@ -1,7 +1,7 @@
 /**
  * @since 1.0.0
  */
-import * as Reactivity from "@effect/experimental/Reactivity"
+// import * as Reactivity from "@effect/experimental/Reactivity" // No longer needed with Signals
 import * as Headers from "@effect/platform/Headers"
 import type * as Rpc from "@effect/rpc/Rpc"
 import * as RpcClient from "@effect/rpc/RpcClient"
@@ -135,7 +135,7 @@ export const Tag = <Self>() =>
   ).pipe(Layer.provide(options.protocol))
   self.runtime = Atom.runtime(self.layer)
 
-  self.mutation = Atom.family(<Tag extends Rpc.Tag<Rpcs>>(tag: Tag) =>
+  self.mutation = (<Tag extends Rpc.Tag<Rpcs>>(tag: Tag) =>
     self.runtime.fn<{
       readonly payload: Rpc.PayloadConstructor<Rpc.ExtractTag<Rpcs, Tag>>
       readonly reactivityKeys?:
@@ -147,9 +147,8 @@ export const Tag = <Self>() =>
       Effect.fnUntraced(function*({ headers, payload, reactivityKeys }) {
         const client = yield* self
         const effect = client(tag, payload, { headers } as any)
-        return yield* reactivityKeys
-          ? Reactivity.mutation(effect, reactivityKeys)
-          : effect
+        // TODO: Implement mutation invalidation with Signals
+        return yield* effect
       })
     )
   ) as any

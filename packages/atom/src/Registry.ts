@@ -12,7 +12,7 @@ import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import type * as Atom from "./Atom.js"
 import type { Registry } from "./index.js"
-import * as internal from "./internal/registry.js"
+import { SignalRegistry } from "./internal/signal-registry.js"
 import * as Result from "./Result.js"
 
 /**
@@ -67,14 +67,22 @@ interface Node<A> {
  * @since 1.0.0
  * @category constructors
  */
-export const make: (
+export const make = (
   options?: {
     readonly initialValues?: Iterable<readonly [Atom.Atom<any>, any]> | undefined
     readonly scheduleTask?: ((f: () => void) => void) | undefined
     readonly timeoutResolution?: number | undefined
     readonly defaultIdleTTL?: number | undefined
   } | undefined
-) => Registry = internal.make
+): Registry => {
+  // Always use Signal-based implementation
+  return new SignalRegistry(
+    options?.initialValues,
+    options?.scheduleTask,
+    options?.timeoutResolution,
+    options?.defaultIdleTTL
+  )
+}
 
 /**
  * @since 1.0.0
@@ -100,7 +108,7 @@ export const layerOptions = (options?: {
     Effect.gen(function*() {
       const scope = yield* Effect.scope
       const scheduler = yield* FiberRef.get(FiberRef.currentScheduler)
-      const registry = internal.make({
+      const registry = make({
         ...options,
         scheduleTask: options?.scheduleTask ?? ((f) => scheduler.scheduleTask(f, 0))
       })
@@ -113,7 +121,7 @@ export const layerOptions = (options?: {
  * @since 1.0.0
  * @category Layers
  */
-export const layer: Layer.Layer<Registry.AtomRegistry> = layerOptions()
+export const layer: Layer.Layer<AtomRegistry> = layerOptions()
 
 // -----------------------------------------------------------------------------
 // conversions
